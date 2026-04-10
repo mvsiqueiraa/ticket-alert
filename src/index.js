@@ -118,6 +118,9 @@ async function getPageStatus(browser, eventUrl) {
     const pickerBar = page.locator("#picker-bar").first();
     const pickerBarExists = (await pickerBar.count()) > 0;
     const searchRoot = pickerBarExists ? pickerBar : page.locator("body");
+    const pickerBarText = pickerBarExists
+      ? ((await pickerBar.innerText().catch(() => "")) || "").trim()
+      : "";
 
     const soldOutBox = searchRoot.locator(".event-status.status-soldout").first();
     const soldOutVisible = await soldOutBox.isVisible().catch(() => false);
@@ -176,6 +179,29 @@ async function getPageStatus(browser, eventUrl) {
       matchedBy: "nenhum seletor encontrado",
       currentUrl,
       title,
+      debug: {
+        pickerBarExists,
+        pickerBarText: pickerBarText.slice(0, 250),
+        eventStatusCount: await searchRoot.locator(".event-status").count().catch(() => 0),
+        soldOutCount: await searchRoot
+          .locator(".event-status.status-soldout")
+          .count()
+          .catch(() => 0),
+        primaryButtonCount: await searchRoot
+          .locator("button.btn-primary, .btn-primary")
+          .count()
+          .catch(() => 0),
+        ctaCount: await searchRoot
+          .locator(
+            '.action-container.picker-full button.btn-primary.next, button.btn-primary.next, a, button, [role="button"]'
+          )
+          .filter({
+            hasText:
+              /INGRESSOS|COMPRAR|SELECIONAR INGRESSOS|VER INGRESSOS|ESCOLHER INGRESSOS/i,
+          })
+          .count()
+          .catch(() => 0),
+      },
     };
   } finally {
     await context.close();
@@ -198,6 +224,17 @@ async function checkOnce() {
         const currentStatus = result.status;
 
         console.log(`[${now}] ${eventUrl} -> ${currentStatus}`);
+
+        if (currentStatus === "unknown") {
+          console.log(
+            `[${now}] Diagnóstico unknown: ${JSON.stringify({
+              currentUrl: result.currentUrl,
+              title: result.title,
+              statusText: result.statusText,
+              debug: result.debug,
+            })}`
+          );
+        }
 
         const shouldSendAlert =
           hasPreviousState &&
