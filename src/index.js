@@ -104,7 +104,9 @@ async function getPageStatus(browser, eventUrl) {
       normalizedText.includes("ACCESS DENIED") ||
       normalizedText.includes("CAPTCHA") ||
       normalizedText.includes("BOT") ||
-      normalizedText.includes("UNUSUAL TRAFFIC")
+      normalizedText.includes("UNUSUAL TRAFFIC") ||
+      normalizedText.includes("UNUSUAL BEHAVIOR") ||
+      normalizedText.includes("BROWSING ACTIVITY HAS BEEN PAUSED")
     ) {
       return {
         status: "blocked",
@@ -225,6 +227,12 @@ async function checkOnce() {
 
         console.log(`[${now}] ${eventUrl} -> ${currentStatus}`);
 
+        if (currentStatus === "blocked") {
+          console.log(
+            `[${now}] Bloqueio Ticketmaster: ${result.statusText.slice(0, 220)}`
+          );
+        }
+
         if (currentStatus === "unknown") {
           console.log(
             `[${now}] Diagnóstico unknown: ${JSON.stringify({
@@ -258,12 +266,21 @@ async function checkOnce() {
           console.log(`[${now}] Alerta enviado.`);
         }
 
+        const keepPreviousStatus =
+          hasPreviousState &&
+          (currentStatus === "blocked" || currentStatus === "unknown");
+
         state[eventUrl] = {
-          lastStatus: currentStatus,
+          ...previousState,
+          lastStatus: keepPreviousStatus ? previous : currentStatus,
           lastCheckedAt: now,
           lastAlertAt: shouldSendAlert || shouldSendTestAlert
             ? now
             : previousState?.lastAlertAt || null,
+          lastTransientStatus: keepPreviousStatus ? currentStatus : null,
+          lastTransientAt: keepPreviousStatus
+            ? now
+            : previousState?.lastTransientAt || null,
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
