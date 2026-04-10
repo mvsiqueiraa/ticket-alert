@@ -24,6 +24,10 @@ const ALERT_ON_FIRST_AVAILABLE = process.env.ALERT_ON_FIRST_AVAILABLE === "true"
 const dataDir = path.join(__dirname, "..", "data");
 const stateFile = path.join(dataDir, "state.json");
 
+let activeBrowser = null;
+let intervalId = null;
+let shuttingDown = false;
+
 if (!EVENT_URLS.length) {
   throw new Error("EVENT_URLS não definido no .env");
 }
@@ -214,6 +218,7 @@ async function checkOnce() {
   const now = new Date().toISOString();
   const state = await readState();
   const browser = await chromium.launch({ headless: HEADLESS });
+  activeBrowser = browser;
 
   try {
     for (const eventUrl of EVENT_URLS) {
@@ -290,15 +295,47 @@ async function checkOnce() {
 
     await writeState(state);
   } finally {
-    await browser.close();
+    activeBrowser = null;
+    await browser.close().catch(() => {});
   }
 }
+
+async function shutdown(signal) {
+  if (shuttingDown) {
+    return;
+  }
+
+  shuttingDown = true;
+  console.log(`Encerrando monitor (${signal}).`);
+
+  if (intervalId) {
+    clearInterval(intervalId);
+  }
+
+  if (activeBrowser) {
+    await activeBrowser.close().catch(() => {});
+  }
+
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
+
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
+});
 
 async function bootstrap() {
   console.log(`Monitor iniciado para ${EVENT_URLS.length} datas.`);
   await checkOnce();
 
-  setInterval(async () => {
+  intervalId = setInterval(async () => {
+    if (shuttingDown) {
+      return;
+    }
+
     await checkOnce();
   }, CHECK_INTERVAL_MS);
 }
