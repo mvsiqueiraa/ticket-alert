@@ -133,6 +133,30 @@ async function getPageStatus(browser, eventUrl) {
       };
     }
 
+    const availableCta = searchRoot
+      .locator(
+        '.action-container.picker-full button.btn-primary.next, button.btn-primary.next, a, button, [role="button"]'
+      )
+      .filter({
+        hasText:
+          /INGRESSOS|COMPRAR|SELECIONAR INGRESSOS|VER INGRESSOS|ESCOLHER INGRESSOS/i,
+      })
+      .first();
+
+    const availableCtaVisible = await availableCta.isVisible().catch(() => false);
+    const availableCtaDisabled = await availableCta.isDisabled().catch(() => false);
+
+    if (availableCtaVisible && !availableCtaDisabled) {
+      const statusText = (await availableCta.innerText().catch(() => "")) || "";
+      return {
+        status: "available",
+        statusText: statusText.trim(),
+        matchedBy: "CTA visível de ingresso/compra",
+        currentUrl,
+        title,
+      };
+    }
+
     const genericSoldOutByText =
       normalizedText.includes("ESGOTADO") || normalizedText.includes("SOLD OUT");
 
@@ -141,27 +165,6 @@ async function getPageStatus(browser, eventUrl) {
         status: "sold_out",
         statusText: "ESGOTADO",
         matchedBy: "texto global da página",
-        currentUrl,
-        title,
-      };
-    }
-
-    const availableCta = searchRoot
-      .locator('a, button, [role="button"]')
-      .filter({
-        hasText:
-          /INGRESSOS|COMPRAR|SELECIONAR INGRESSOS|VER INGRESSOS|ESCOLHER INGRESSOS/i,
-      })
-      .first();
-
-    const availableCtaVisible = await availableCta.isVisible().catch(() => false);
-
-    if (availableCtaVisible) {
-      const statusText = (await availableCta.innerText().catch(() => "")) || "";
-      return {
-        status: "available",
-        statusText: statusText.trim(),
-        matchedBy: "CTA visível de ingresso/compra",
         currentUrl,
         title,
       };
@@ -201,8 +204,9 @@ async function checkOnce() {
           previous === "sold_out" &&
           currentStatus === "available";
         const shouldSendTestAlert =
-          !hasPreviousState &&
           ALERT_ON_FIRST_AVAILABLE &&
+          !shouldSendAlert &&
+          previous !== "available" &&
           currentStatus === "available";
 
         if (shouldSendAlert || shouldSendTestAlert) {
