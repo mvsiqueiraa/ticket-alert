@@ -186,40 +186,35 @@ async function checkOnce() {
   try {
     for (const eventUrl of EVENT_URLS) {
       const previous = state[eventUrl]?.lastStatus || "unknown";
-
-      console.log(`[${now}] Verificando: ${eventUrl}`);
+      const hasPreviousState = !!state[eventUrl];
 
       try {
         const result = await getPageStatus(browser, eventUrl);
         const currentStatus = result.status;
 
-        console.log(`[${now}] Status detectado: ${currentStatus}`);
-        console.log(`[${now}] Texto detectado: ${result.statusText}`);
-        console.log(`[${now}] Regra usada: ${result.matchedBy}`);
-        console.log(`[${now}] URL final: ${result.currentUrl}`);
-        console.log(`[${now}] Título: ${result.title}`);
+        console.log(`[${now}] ${eventUrl} -> ${currentStatus}`);
 
         state[eventUrl] = {
           lastStatus: currentStatus,
           lastCheckedAt: now,
           lastAlertAt: state[eventUrl]?.lastAlertAt || null,
         };
-const hasPreviousState = !!state[eventUrl];
 
-if (
-  hasPreviousState &&
-  previous === "sold_out" &&
-  currentStatus === "available"
-) {
-  await sendTelegramMessage(
-    `🚨 Ingresso disponível!\n\n${eventUrl}\n\nTexto detectado: ${result.statusText || "CTA de compra visível"}`
-  );
+        if (
+          hasPreviousState &&
+          previous === "sold_out" &&
+          currentStatus === "available"
+        ) {
+          await sendTelegramMessage(
+            `🚨 Ingresso disponível!\n\n${eventUrl}\n\nTexto detectado: ${result.statusText || "CTA de compra visível"}`
+          );
 
-  state[eventUrl].lastAlertAt = now;
-  console.log(`[${now}] Alerta enviado.`);
-}
+          state[eventUrl].lastAlertAt = now;
+          console.log(`[${now}] Alerta enviado.`);
+        }
       } catch (error) {
-        console.error(`[${now}] Erro no link ${eventUrl}: ${error.message}`);
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`[${now}] ${eventUrl} -> error: ${message}`);
       }
     }
 
@@ -230,7 +225,7 @@ if (
 }
 
 async function bootstrap() {
-  console.log("Monitor iniciado para 3 datas.");
+  console.log(`Monitor iniciado para ${EVENT_URLS.length} datas.`);
   await checkOnce();
 
   setInterval(async () => {
