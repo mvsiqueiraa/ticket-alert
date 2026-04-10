@@ -65,6 +65,8 @@ async function sendTelegramMessage(message) {
 async function getPageStatus(browser, eventUrl) {
   const context = await browser.newContext({
     viewport: { width: 390, height: 844 },
+    locale: "pt-BR",
+    timezoneId: "America/Sao_Paulo",
     userAgent:
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
   });
@@ -77,11 +79,43 @@ async function getPageStatus(browser, eventUrl) {
       timeout: 60000,
     });
 
-    await page.waitForTimeout(6000);
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await page.waitForTimeout(8000);
+
+    const currentUrl = page.url();
+    const title = await page.title().catch(() => "");
+    const bodyTextRaw = await page.locator("body").innerText().catch(() => "");
+    const bodyText = (bodyTextRaw || "").trim();
+
+    const normalizedText = bodyText
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toUpperCase();
+
+    const snippet = bodyText.slice(0, 500);
+
+    if (
+      normalizedText.includes("ATIVIDADE SUSPEITA") ||
+      normalizedText.includes("SUSPEITA") ||
+      normalizedText.includes("VERIFY YOU ARE HUMAN") ||
+      normalizedText.includes("ACCESS DENIED") ||
+      normalizedText.includes("CAPTCHA") ||
+      normalizedText.includes("BOT") ||
+      normalizedText.includes("UNUSUAL TRAFFIC")
+    ) {
+      return {
+        status: "blocked",
+        statusText: snippet,
+        matchedBy: "texto de bloqueio/antibot",
+        currentUrl,
+        title,
+      };
+    }
 
     const pickerBar = page.locator("#picker-bar").first();
     const pickerBarExists = (await pickerBar.count()) > 0;
-
     const searchRoot = pickerBarExists ? pickerBar : page.locator("body");
 
     const soldOutBox = searchRoot.locator(".event-status.status-soldout").first();
@@ -89,11 +123,25 @@ async function getPageStatus(browser, eventUrl) {
 
     if (soldOutVisible) {
       const statusText = (await soldOutBox.innerText().catch(() => "")) || "";
-
       return {
         status: "sold_out",
         statusText: statusText.trim(),
         matchedBy: ".event-status.status-soldout",
+        currentUrl,
+        title,
+      };
+    }
+
+    const genericSoldOutByText =
+      normalizedText.includes("ESGOTADO") || normalizedText.includes("SOLD OUT");
+
+    if (genericSoldOutByText) {
+      return {
+        status: "sold_out",
+        statusText: "ESGOTADO",
+        matchedBy: "texto global da página",
+        currentUrl,
+        title,
       };
     }
 
@@ -109,32 +157,21 @@ async function getPageStatus(browser, eventUrl) {
 
     if (availableCtaVisible) {
       const statusText = (await availableCta.innerText().catch(() => "")) || "";
-
       return {
         status: "available",
         statusText: statusText.trim(),
         matchedBy: "CTA visível de ingresso/compra",
-      };
-    }
-
-    const genericStatus = searchRoot.locator(".event-status").first();
-    const genericStatusVisible = await genericStatus.isVisible().catch(() => false);
-
-    if (genericStatusVisible) {
-      const statusText = ((await genericStatus.innerText().catch(() => "")) || "").trim();
-      const statusClass = (await genericStatus.getAttribute("class").catch(() => "")) || "";
-
-      return {
-        status: "unknown",
-        statusText,
-        matchedBy: statusClass || ".event-status",
+        currentUrl,
+        title,
       };
     }
 
     return {
       status: "unknown",
-      statusText: "",
+      statusText: snippet,
       matchedBy: "nenhum seletor encontrado",
+      currentUrl,
+      title,
     };
   } finally {
     await context.close();
@@ -159,6 +196,8 @@ async function checkOnce() {
         console.log(`[${now}] Status detectado: ${currentStatus}`);
         console.log(`[${now}] Texto detectado: ${result.statusText}`);
         console.log(`[${now}] Regra usada: ${result.matchedBy}`);
+        console.log(`[${now}] URL final: ${result.currentUrl}`);
+        console.log(`[${now}] Título: ${result.title}`);
 
         state[eventUrl] = {
           lastStatus: currentStatus,
