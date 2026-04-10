@@ -5,8 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "postinstall": "npx playwright install --with-deps chromium"
+    "dev": "node --watch src/index.js"
   },
   "dependencies": {
     "axios": "^1.15.0",
