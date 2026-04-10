@@ -19,6 +19,7 @@ const CHECK_INTERVAL_MS = Number(process.env.CHECK_INTERVAL_MS || 120000);
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const HEADLESS = process.env.HEADLESS !== "false";
+const ALERT_ON_FIRST_AVAILABLE = process.env.ALERT_ON_FIRST_AVAILABLE === "true";
 
 const dataDir = path.join(__dirname, "..", "data");
 const stateFile = path.join(dataDir, "state.json");
@@ -185,8 +186,9 @@ async function checkOnce() {
 
   try {
     for (const eventUrl of EVENT_URLS) {
-      const previous = state[eventUrl]?.lastStatus || "unknown";
-      const hasPreviousState = !!state[eventUrl];
+      const previousState = state[eventUrl];
+      const previous = previousState?.lastStatus || "unknown";
+      const hasPreviousState = !!previousState;
 
       try {
         const result = await getPageStatus(browser, eventUrl);
@@ -194,24 +196,34 @@ async function checkOnce() {
 
         console.log(`[${now}] ${eventUrl} -> ${currentStatus}`);
 
+        const shouldSendAlert =
+          hasPreviousState &&
+          previous === "sold_out" &&
+          currentStatus === "available";
+        const shouldSendTestAlert =
+          !hasPreviousState &&
+          ALERT_ON_FIRST_AVAILABLE &&
+          currentStatus === "available";
+
+        if (shouldSendAlert || shouldSendTestAlert) {
+          const prefix = shouldSendTestAlert
+            ? "🧪 Teste de monitoramento"
+            : "🚨 Ingresso disponível!";
+
+          await sendTelegramMessage(
+            `${prefix}\n\n${eventUrl}\n\nTexto detectado: ${result.statusText || "CTA de compra visível"}`
+          );
+
+          console.log(`[${now}] Alerta enviado.`);
+        }
+
         state[eventUrl] = {
           lastStatus: currentStatus,
           lastCheckedAt: now,
-          lastAlertAt: state[eventUrl]?.lastAlertAt || null,
+          lastAlertAt: shouldSendAlert || shouldSendTestAlert
+            ? now
+            : previousState?.lastAlertAt || null,
         };
-
-        if (
-          hasPreviousState &&
-          previous === "sold_out" &&
-          currentStatus === "available"
-        ) {
-          await sendTelegramMessage(
-            `🚨 Ingresso disponível!\n\n${eventUrl}\n\nTexto detectado: ${result.statusText || "CTA de compra visível"}`
-          );
-
-          state[eventUrl].lastAlertAt = now;
-          console.log(`[${now}] Alerta enviado.`);
-        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`[${now}] ${eventUrl} -> error: ${message}`);
